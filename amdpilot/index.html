@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AMDPilot: Base vs LoRA-SFT Trajectory Comparison</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0f0f13; --bg2: #16161d; --bg3: #1e1e28;
+  --border: #2a2a3a; --text: #e0e0e8; --text-dim: #8888a0;
+  --accent: #6366f1; --accent2: #f59e0b;
+  --green: #22c55e; --red: #ef4444;
+  --mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --sans: 'Inter', system-ui, sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--text); font-family:var(--sans); font-size:14px; line-height:1.5; }
+
+header { background:var(--bg2); border-bottom:1px solid var(--border); padding:16px 24px; position:sticky; top:0; z-index:100; }
+header h1 { font-size:18px; font-weight:600; letter-spacing:-0.02em; }
+header h1 span { color:var(--text-dim); font-weight:400; }
+
+.tab-bar { display:flex; gap:2px; background:var(--bg); border-bottom:1px solid var(--border); padding:0 24px; overflow-x:auto; }
+.tab { padding:10px 20px; cursor:pointer; color:var(--text-dim); border-bottom:2px solid transparent; font-size:13px; font-weight:500; white-space:nowrap; transition:all .15s; }
+.tab:hover { color:var(--text); background:var(--bg2); }
+.tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+
+.page { display:none; }
+.page.active { display:block; }
+
+.dashboard { padding:24px; max-width:1400px; margin:0 auto; }
+.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px; margin-bottom:24px; }
+.card { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:20px; }
+.card h3 { font-size:13px; font-weight:500; color:var(--text-dim); text-transform:uppercase; letter-spacing:.05em; margin-bottom:12px; }
+
+.metric-row { display:flex; justify-content:space-between; align-items:baseline; padding:6px 0; border-bottom:1px solid var(--border); }
+.metric-row:last-child { border-bottom:none; }
+.metric-label { color:var(--text-dim); font-size:13px; }
+.metric-value { font-family:var(--mono); font-weight:500; font-size:15px; }
+.metric-value.better { color:var(--green); }
+.metric-value.worse { color:var(--red); }
+
+.badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; font-family:var(--mono); }
+.badge.base { background:rgba(99,102,241,.15); color:#818cf8; }
+.badge.sft { background:rgba(245,158,11,.15); color:#fbbf24; }
+
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th { text-align:left; padding:8px 12px; background:var(--bg3); color:var(--text-dim); font-weight:500; font-size:11px; text-transform:uppercase; letter-spacing:.05em; border-bottom:1px solid var(--border); }
+td { padding:8px 12px; border-bottom:1px solid var(--border); font-family:var(--mono); font-size:12px; }
+
+.trajectory-page { display:flex; flex-direction:column; height:calc(100vh - 90px); }
+.traj-controls { display:flex; gap:12px; padding:12px 24px; background:var(--bg2); border-bottom:1px solid var(--border); align-items:center; flex-wrap:wrap; }
+.traj-controls label { font-size:12px; color:var(--text-dim); margin-right:4px; }
+.traj-controls select, .traj-controls input[type="text"] { background:var(--bg3); border:1px solid var(--border); color:var(--text); padding:6px 10px; border-radius:4px; font-size:12px; font-family:var(--sans); }
+
+.filter-bar { display:flex; gap:6px; align-items:center; }
+.toggle { padding:4px 10px; border-radius:4px; font-size:11px; cursor:pointer; border:1px solid var(--border); background:var(--bg); color:var(--text-dim); font-family:var(--mono); user-select:none; }
+.toggle.active { background:var(--accent); color:white; border-color:var(--accent); }
+
+.search-box { flex:1; max-width:300px; }
+
+.split-view { display:grid; grid-template-columns:1fr 1fr; flex:1; overflow:hidden; }
+.pane { overflow-y:auto; border-right:1px solid var(--border); }
+.pane:last-child { border-right:none; }
+.pane-header { position:sticky; top:0; z-index:10; padding:8px 16px; font-size:12px; font-weight:600; border-bottom:1px solid var(--border); }
+.pane-header.base-h { background:rgba(99,102,241,.1); color:#818cf8; }
+.pane-header.sft-h { background:rgba(245,158,11,.1); color:#fbbf24; }
+
+.step { border-bottom:1px solid var(--border); padding:8px 16px; font-size:12px; }
+.step.user-step { background:rgba(99,102,241,.04); }
+.step.assistant-step { background:var(--bg2); }
+.step.tool_result-step { background:var(--bg); }
+
+.step-badge { display:inline-block; font-size:10px; font-weight:600; padding:1px 6px; border-radius:3px; margin-right:6px; text-transform:uppercase; font-family:var(--mono); }
+.step-badge.user { background:rgba(99,102,241,.2); color:#a5b4fc; }
+.step-badge.assistant { background:rgba(34,197,94,.2); color:#86efac; }
+.step-badge.tool_result { background:rgba(168,85,247,.2); color:#c4b5fd; }
+.step-badge.usage { background:rgba(100,100,120,.2); color:#aaa; }
+
+.step-num { color:var(--text-dim); font-family:var(--mono); font-size:10px; float:right; }
+
+.step-content { margin-top:4px; white-space:pre-wrap; word-break:break-word; font-family:var(--mono); font-size:11px; line-height:1.6; color:var(--text); max-height:400px; overflow-y:auto; }
+.step-content.coll { max-height:80px; overflow:hidden; position:relative; }
+.step-content.coll::after { content:''; position:absolute; bottom:0; left:0; right:0; height:30px; background:linear-gradient(transparent,var(--bg2)); }
+
+.tool-call-box { margin:4px 0; padding:6px 10px; background:var(--bg); border:1px solid var(--border); border-radius:4px; font-family:var(--mono); font-size:11px; }
+.tool-name { color:#fbbf24; font-weight:600; }
+.tool-args { color:var(--text-dim); margin-top:2px; max-height:200px; overflow-y:auto; white-space:pre-wrap; word-break:break-all; }
+.tool-args.coll { max-height:60px; overflow:hidden; }
+
+.expand-btn { background:none; border:none; color:var(--accent); cursor:pointer; font-size:11px; padding:2px 0; font-family:var(--sans); }
+
+.sup-box { margin-bottom:12px; padding:8px; background:var(--bg3); border-radius:4px; }
+.sup-box .sup-title { font-weight:600; font-size:12px; margin-bottom:4px; }
+.sup-box .sup-body { font-size:11px; color:var(--text-dim); font-family:var(--mono); white-space:pre-wrap; }
+
+.loading { display:flex; align-items:center; justify-content:center; height:400px; color:var(--text-dim); font-size:16px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>AMDPilot Trajectory Comparison <span>| Base vs LoRA-SFT v4</span></h1>
+</header>
+
+<div class="tab-bar" id="tabBar">
+  <div class="tab active" data-page="overview">Overview</div>
+  <div class="tab" data-page="kimi-k25">Kimi-K25 Decode Latency</div>
+  <div class="tab" data-page="qwen-vl">Qwen-VL Throughput</div>
+</div>
+
+<div id="pages">
+  <div class="page active" id="page-overview"><div class="dashboard loading">Loading data...</div></div>
+  <div class="page" id="page-kimi-k25"><div class="trajectory-page" id="kimiPage"><div class="loading">Loading...</div></div></div>
+  <div class="page" id="page-qwen-vl"><div class="trajectory-page" id="qwenPage"><div class="loading">Loading...</div></div></div>
+</div>
+
+<script>
+let DATA = null;
+
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('page-' + tab.dataset.page).classList.add('active');
+  });
+});
+
+function esc(s) {
+  if (typeof s !== 'string') s = JSON.stringify(s, null, 2) || '';
+  const d = document.createElement('div'); d.textContent = s; return d.innerHTML;
+}
+
+function renderOverview() {
+  const el = document.querySelector('#page-overview .dashboard');
+  let h = '<h2 style="margin-bottom:20px;font-size:20px;">Benchmark Results Comparison</h2>';
+
+  for (const [tk, task] of Object.entries(DATA.tasks)) {
+    const bv = task.variants.base, sv = task.variants.sft;
+    const bs = bv.summary, ss = sv.summary;
+    const dir = task.metric_direction;
+    const better = dir === 'lower' ? +ss.best_metric < +bs.best_metric : +ss.best_metric > +bs.best_metric;
+
+    h += `<div class="card" style="margin-bottom:24px;">
+      <h3>${esc(task.task)} (${esc(task.metric_name)}, ${dir} is better)</h3>
+      <div class="cards" style="margin-bottom:16px;">
+        <div class="card">
+          <h3><span class="badge base">BASE</span> ${esc(bv.label)}</h3>
+          <div class="metric-row"><span class="metric-label">Best</span><span class="metric-value">${esc(bs.best_metric)} ${task.metric_unit}</span></div>
+          <div class="metric-row"><span class="metric-label">Trials</span><span class="metric-value">${bs.total_trials} (${bs.failures} fail)</span></div>
+          <div class="metric-row"><span class="metric-label">Stages</span><span class="metric-value">${bs.stages_completed}</span></div>
+          <div class="metric-row"><span class="metric-label">Time</span><span class="metric-value">${(bs.total_elapsed_s/3600).toFixed(1)}h</span></div>
+        </div>
+        <div class="card">
+          <h3><span class="badge sft">SFT</span> ${esc(sv.label)}</h3>
+          <div class="metric-row"><span class="metric-label">Best</span><span class="metric-value ${better?'better':'worse'}">${esc(ss.best_metric)} ${task.metric_unit}</span></div>
+          <div class="metric-row"><span class="metric-label">Trials</span><span class="metric-value">${ss.total_trials} (${ss.failures} fail)</span></div>
+          <div class="metric-row"><span class="metric-label">Stages</span><span class="metric-value">${ss.stages_completed}</span></div>
+          <div class="metric-row"><span class="metric-label">Time</span><span class="metric-value">${(ss.total_elapsed_s/3600).toFixed(1)}h</span></div>
+        </div>
+      </div>
+      <div class="scoreboard-section"><h3>Scoreboard</h3>
+        <div class="cards">
+          ${['base','sft'].map(vk => {
+            const v = task.variants[vk];
+            return `<div><h3 style="margin-bottom:8px"><span class="badge ${vk}">${vk.toUpperCase()}</span></h3>
+              <table><thead><tr><th>#</th><th>Stage</th><th>Metric</th><th>Verified</th><th>Time</th></tr></thead>
+              <tbody>${v.scoreboard.map(r=>`<tr><td>${r.trial}</td><td style="font-size:10px">${esc(r.stage)}</td><td>${r.metric_value||'N/A'}</td><td>${r.verified_metric||'N/A'}</td><td>${r.elapsed_s}s</td></tr>`).join('')}</tbody></table></div>`;
+          }).join('')}
+        </div>
+      </div>
+      <div class="scoreboard-section" style="margin-top:16px"><h3>Supervisor Analysis</h3>
+        <div class="cards">
+          ${['base','sft'].map(vk => {
+            const s = task.variants[vk].summary;
+            return `<div><h3 style="margin-bottom:8px"><span class="badge ${vk}">${vk.toUpperCase()}</span></h3>
+              ${(s.trials||[]).map(t=>`<div class="sup-box">
+                <div class="sup-title">Trial ${t.trial}: ${esc(t.stage)} &mdash; ${t.supervisor_action}</div>
+                <div class="sup-body">${esc((t.supervisor_analysis||'').substring(0,600))}</div>
+              </div>`).join('')}</div>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>`;
+  }
+  el.innerHTML = h;
+}
+
+function renderTrajectoryPage(taskKey, cid) {
+  const c = document.getElementById(cid);
+  const task = DATA.tasks[taskKey];
+  const bTrials = Object.keys(task.variants.base.trials).sort((a,b)=>+a-+b);
+  const sTrials = Object.keys(task.variants.sft.trials).sort((a,b)=>+a-+b);
+
+  c.innerHTML = `
+    <div class="traj-controls">
+      <label>Base Trial:</label>
+      <select id="${taskKey}-bt">${bTrials.map(t=>`<option value="${t}">Trial ${t} (${task.variants.base.trials[t].step_count} steps)</option>`).join('')}</select>
+      <label>SFT Trial:</label>
+      <select id="${taskKey}-st">${sTrials.map(t=>`<option value="${t}">Trial ${t} (${task.variants.sft.trials[t].step_count} steps)</option>`).join('')}</select>
+      <div class="filter-bar">
+        <div class="toggle active" data-f="user" data-t="${taskKey}">user</div>
+        <div class="toggle active" data-f="assistant" data-t="${taskKey}">assistant</div>
+        <div class="toggle active" data-f="tool_result" data-t="${taskKey}">tool</div>
+        <div class="toggle" data-f="usage" data-t="${taskKey}">usage</div>
+      </div>
+      <input type="text" class="search-box" id="${taskKey}-q" placeholder="Search trajectories...">
+      <label style="font-size:11px;color:var(--text-dim);"><input type="checkbox" id="${taskKey}-sync" checked> Sync</label>
+      <label style="font-size:11px;color:var(--text-dim);"><input type="checkbox" id="${taskKey}-coll"> Collapse</label>
+    </div>
+    <div class="split-view">
+      <div class="pane" id="${taskKey}-bp"><div class="pane-header base-h">BASE: ${esc(task.variants.base.label)}</div><div id="${taskKey}-bs"></div></div>
+      <div class="pane" id="${taskKey}-sp"><div class="pane-header sft-h">SFT: ${esc(task.variants.sft.label)}</div><div id="${taskKey}-ss"></div></div>
+    </div>`;
+
+  const bSel = document.getElementById(`${taskKey}-bt`);
+  const sSel = document.getElementById(`${taskKey}-st`);
+  const qIn = document.getElementById(`${taskKey}-q`);
+  const syncCk = document.getElementById(`${taskKey}-sync`);
+  const collCk = document.getElementById(`${taskKey}-coll`);
+  const bPane = document.getElementById(`${taskKey}-bp`);
+  const sPane = document.getElementById(`${taskKey}-sp`);
+
+  function renderSteps(steps, tid, search, filters, coll) {
+    const el = document.getElementById(tid);
+    let h = '', n = 0;
+    for (const step of steps) {
+      if (!filters.has(step.type)) continue;
+      if (search && !matchSearch(step, search)) continue;
+      n++;
+      let content = '';
+      if (step.type === 'user') {
+        const t = typeof step.content === 'string' ? step.content : JSON.stringify(step.content);
+        content = `<div class="step-content ${coll && t.length > 500 ? 'coll' : ''}">${esc(t)}</div>` +
+          (t.length > 500 ? `<button class="expand-btn" onclick="this.previousElementSibling.classList.toggle('coll');this.textContent=this.textContent==='expand'?'collapse':'expand'">expand</button>` : '');
+      } else if (step.type === 'assistant') {
+        let p = '';
+        if (step.thinking) p += `<div style="color:#a78bfa;font-style:italic;margin-bottom:4px;">[thinking] ${esc(step.thinking.substring(0,500))}${step.thinking.length>500?'...':''}</div>`;
+        if (step.text && step.text.trim()) p += `<div class="step-content">${esc(step.text)}</div>`;
+        for (const tc of (step.tool_calls||[])) {
+          const as = Object.entries(tc.args||{}).map(([k,v])=>{const s=typeof v==='string'?v:JSON.stringify(v);return `${k}: ${s.length>500?s.substring(0,500)+'...':s}`;}).join('\n');
+          p += `<div class="tool-call-box"><span class="tool-name">${esc(tc.name)}</span><div class="tool-args ${coll?'coll':''}">${esc(as)}</div>${as.length>200?'<button class="expand-btn" onclick="this.previousElementSibling.classList.toggle(\'coll\');this.textContent=this.textContent===\'expand\'?\'collapse\':\'expand\'">expand</button>':''}</div>`;
+        }
+        content = p;
+      } else if (step.type === 'tool_result') {
+        const t = step.content||'';
+        content = `<div class="step-content ${coll && t.length > 300 ? 'coll' : ''}">${esc(t)}</div>` +
+          (t.length > 300 ? `<button class="expand-btn" onclick="this.previousElementSibling.classList.toggle('coll');this.textContent=this.textContent==='expand'?'collapse':'expand'">expand</button>` : '');
+      } else if (step.type === 'usage') {
+        content = `<span style="color:var(--text-dim);font-family:var(--mono);font-size:10px;">${step.tokens} tokens</span>`;
+      }
+      h += `<div class="step ${step.type}-step" data-step="${n}"><span class="step-num">#${n}</span><span class="step-badge ${step.type}">${step.type==='tool_result'?'tool result':step.type}</span>${content}</div>`;
+    }
+    el.innerHTML = h || '<div style="padding:20px;color:var(--text-dim);">No matching steps</div>';
+  }
+
+  function matchSearch(step, q) {
+    q = q.toLowerCase();
+    if (step.type === 'user') return (typeof step.content === 'string' ? step.content : JSON.stringify(step.content)).toLowerCase().includes(q);
+    if (step.type === 'assistant') {
+      if ((step.text||'').toLowerCase().includes(q)) return true;
+      if ((step.thinking||'').toLowerCase().includes(q)) return true;
+      for (const tc of (step.tool_calls||[])) { if (tc.name.toLowerCase().includes(q) || JSON.stringify(tc.args).toLowerCase().includes(q)) return true; }
+      return false;
+    }
+    if (step.type === 'tool_result') return (step.content||'').toLowerCase().includes(q);
+    return false;
+  }
+
+  function getFilters() { const f = new Set(); document.querySelectorAll(`.toggle[data-t="${taskKey}"].active`).forEach(e=>f.add(e.dataset.f)); return f; }
+
+  function refresh() {
+    const filters = getFilters(), search = qIn.value, coll = collCk.checked;
+    renderSteps(task.variants.base.trials[bSel.value]?.steps||[], `${taskKey}-bs`, search, filters, coll);
+    renderSteps(task.variants.sft.trials[sSel.value]?.steps||[], `${taskKey}-ss`, search, filters, coll);
+  }
+
+  bSel.onchange = sSel.onchange = qIn.oninput = collCk.onchange = refresh;
+  document.querySelectorAll(`.toggle[data-t="${taskKey}"]`).forEach(b => b.onclick = () => { b.classList.toggle('active'); refresh(); });
+
+  let syncing = false;
+  bPane.onscroll = () => { if (!syncCk.checked||syncing) return; syncing=true; sPane.scrollTop = bPane.scrollTop/(bPane.scrollHeight-bPane.clientHeight||1)*(sPane.scrollHeight-sPane.clientHeight); syncing=false; };
+  sPane.onscroll = () => { if (!syncCk.checked||syncing) return; syncing=true; bPane.scrollTop = sPane.scrollTop/(sPane.scrollHeight-sPane.clientHeight||1)*(bPane.scrollHeight-bPane.clientHeight); syncing=false; };
+
+  refresh();
+}
+
+async function init() {
+  const resp = await fetch('data.json');
+  DATA = await resp.json();
+  renderOverview();
+  renderTrajectoryPage('kimi-k25', 'kimiPage');
+  renderTrajectoryPage('qwen-vl', 'qwenPage');
+}
+init();
+</script>
+</body>
+</html>
